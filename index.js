@@ -23,7 +23,10 @@ async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
-    const percelCollection = client.db("percelDB").collection("parcels");
+
+    const db = client.db("percelDB");
+    const percelCollection = db.collection("parcels");
+    const paymentsCollection = db.collection("payment");
     app.get("/parcels", async (req, res) => {
       const result = await percelCollection.find().toArray();
       res.send(result);
@@ -51,7 +54,7 @@ async function run() {
           sort: { createdAt: -1 }, // Newest first
         };
 
-        const results = await formCollection.find(query, options).toArray();
+        const results = await percelCollection.find(query, options).toArray();
         res.status(200).json(results);
       } catch (error) {
         console.error("Error fetching parcels:", error);
@@ -79,17 +82,72 @@ async function run() {
     // create custom method
     app.post("/create-payment-intent", async (req, res) => {
       try {
-        const { amount, currency } = req.body;
+        const amountIncent = req.body.amountIncent;
 
         const paymentIntent = await stripe.paymentIntents.create({
-          amount,
-          currency,
-          automatic_payment_methods: { enabled: true },
+          amount: amountIncent,
+          currency: "usd",
+          payment_method_types: ["card"],
         });
 
         res.json({ clientSecret: paymentIntent.client_secret });
       } catch (error) {
         res.status(400).json({ error: error.message });
+      }
+    });
+    //  get data
+    app.get("/payments", async (req, res) => {
+      try {
+        const { email } = req.query;
+
+        const filter = email ? { email } : {};
+
+        const payments = await paymentsCollection
+          .find(filter)
+          .sort({ paid_At: -1 }) // Descending by date (latest first)
+          .toArray();
+
+        res.status(200).json(payments);
+      } catch (error) {
+        res
+          .status(500)
+          .json({ message: "Failed to load payment history", error });
+      }
+    });
+
+    // update history
+    app.post("/payments", async (req, res) => {
+      try {
+        const { parcelId, amount, transactionId, email, paymentMethod } =
+          req.body;
+        // 2. Update parcel status
+        await percelCollection.updateOne(
+          { _id: new ObjectId(parcelId) },
+          { $set: { payment_status: "paid" } }
+        );
+
+        const parcelObjectId = new ObjectId(parcelId);
+
+        // 1. Insert into payments collection
+        const paymentData = {
+          parcelId: parcelObjectId,
+          amount,
+          transactionId,
+          email,
+          paymentMethod,
+          paid_at_string: new Date().toISOString(),
+          paid_At: new Date(),
+        };
+
+        const paymentResult = await paymentsCollection.insertOne(paymentData);
+
+        res.status(200).json({
+          message: "Payment saved and parcel updated",
+          paymentId: paymentResult.insertedId,
+        });
+        // res.send(paymentResult);
+      } catch (error) {
+        res.status(500).json({ message: "Payment processing failed", error });
       }
     });
 
