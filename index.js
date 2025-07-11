@@ -1,4 +1,5 @@
 require("dotenv").config();
+const stripe = require("stripe")(process.env.PAYMETN_GATEWAY);
 const express = require("express");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
@@ -74,6 +75,24 @@ async function run() {
         res.status(400).json({ error: "Invalid parcel ID" });
       }
     });
+
+    // create custom method
+    app.post("/create-payment-intent", async (req, res) => {
+      try {
+        const { amount, currency } = req.body;
+
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount,
+          currency,
+          automatic_payment_methods: { enabled: true },
+        });
+
+        res.json({ clientSecret: paymentIntent.client_secret });
+      } catch (error) {
+        res.status(400).json({ error: error.message });
+      }
+    });
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
