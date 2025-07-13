@@ -34,6 +34,7 @@ async function run() {
     const percelCollection = db.collection("parcels");
     const paymentsCollection = db.collection("payment");
     const userCollection = db.collection("users");
+    const riderCollection = db.collection("riders");
 
     // custom middleware
     const verifyToken = async (req, res, next) => {
@@ -216,6 +217,47 @@ async function run() {
         // res.send(paymentResult);
       } catch (error) {
         res.status(500).json({ message: "Payment processing failed", error });
+      }
+    });
+
+    // riders related api
+
+    app.get("/riders/pending", async (req, res) => {
+      try {
+        const pendingRiders = await riderCollection
+          .find({ status: "pending" })
+          .toArray();
+        // res.json(pendingRiders);
+        res.send(pendingRiders);
+      } catch (error) {
+        res
+          .status(500)
+          .json({ message: "Error fetching pending riders", error });
+      }
+    });
+
+    app.post("/riders", async (req, res) => {
+      const riderData = req.body;
+      const result = await riderCollection.insertOne(riderData);
+      res.send(result); // result.insertedId will be used for success
+    });
+
+    // update rider
+    app.patch("/riders/:id/status", async (req, res) => {
+      const { id } = req.params;
+      const { status } = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          status,
+        },
+      };
+
+      try {
+        const result = await riderCollection.updateOne(query, updateDoc);
+        res.send(result);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to update rider status" });
       }
     });
 
